@@ -32,6 +32,7 @@
             this.TextScannedText = new System.Windows.Forms.Label();
             this.TextScanned = new System.Windows.Forms.Label();
             this.SaveToText = new System.Windows.Forms.Button();
+            this.TextScanned2 = new System.Windows.Forms.Label();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             this.SuspendLayout();
             // 
@@ -76,11 +77,22 @@
             this.SaveToText.Visible = false;
             this.SaveToText.Click += new System.EventHandler(this.SaveToText_Click);
             // 
+            // TextScanned2
+            // 
+            this.TextScanned2.AutoSize = true;
+            this.TextScanned2.Location = new System.Drawing.Point(273, 63);
+            this.TextScanned2.Name = "TextScanned2";
+            this.TextScanned2.Size = new System.Drawing.Size(35, 13);
+            this.TextScanned2.TabIndex = 4;
+            this.TextScanned2.Text = "label1";
+            this.TextScanned2.Visible = false;
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(800, 450);
+            this.Controls.Add(this.TextScanned2);
             this.Controls.Add(this.SaveToText);
             this.Controls.Add(this.TextScanned);
             this.Controls.Add(this.TextScannedText);
@@ -101,6 +113,7 @@
         private System.Windows.Forms.Label TextScannedText;
         private System.Windows.Forms.Label TextScanned;
         private System.Windows.Forms.Button SaveToText;
+        private System.Windows.Forms.Label TextScanned2;
     }
 }
 

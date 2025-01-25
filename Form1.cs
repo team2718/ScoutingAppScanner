@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 using AForge.Video;
@@ -79,15 +80,22 @@ namespace CameraFeedApp
                         Invoke(new Action(() =>
                         {
                             Scanned = true;
-                            Console.WriteLine($"{qrCodeData}");
+                            //Console.WriteLine($"{qrCodeData}");
+                            
+                            string[] dataHalved = SplitWithNewlines(qrCodeData);
+                            Console.WriteLine(dataHalved.Length);
+                            Console.WriteLine(dataHalved[26]);
+
                             if (pictureBox1 != null)
                             {
                                 this.Controls.Remove(pictureBox1); // Remove from the form's controls
                                 pictureBox1.Dispose(); // Dispose to free resources
                                 pictureBox1 = null; // Set to null to avoid accessing it after removal
                             }
-                            TextScanned.Text = qrCodeData;
+                            TextScanned.Text = CombineStrings(dataHalved, 0, 25);
+                            TextScanned2.Text = CombineStrings(dataHalved, 26, 32);
                             TextScanned.Visible = true;
+                            TextScanned2.Visible = true;
                             TextScannedText.Visible = true;
                             SaveToText.Visible = true;
                         }));
@@ -204,6 +212,39 @@ namespace CameraFeedApp
                 input = input.Replace(c.ToString(), ""); // Replace invalid characters with '_'
             }
             return input;
+        }
+
+        public static string CombineStrings(string[] inputArray, int startIndex, int endIndex)
+        {
+            // Validate the input array and indices
+            if (inputArray == null || inputArray.Length == 0)
+                throw new ArgumentException("Input array cannot be null or empty.");
+            if (startIndex < 0 || endIndex >= inputArray.Length || startIndex > endIndex)
+                throw new ArgumentOutOfRangeException("Invalid indices provided.");
+
+            // Combine the strings within the range
+            string result = "";
+            for (int i = startIndex; i <= endIndex; i++)
+            {
+                result += inputArray[i];
+            }
+            return result;
+        }
+
+        public static string[] SplitWithNewlines(string input)
+        {
+            // Regular expression that splits by newline but retains it
+            var regex = new Regex(@"([^\n]*\n?)");
+            var matches = regex.Matches(input);
+
+            // Convert matches to an array of strings
+            string[] result = new string[matches.Count];
+            for (int i = 0; i < matches.Count; i++)
+            {
+                result[i] = matches[i].Value;
+            }
+
+            return result;
         }
     }
 }
