@@ -33,6 +33,7 @@
             this.TextScanned = new System.Windows.Forms.Label();
             this.SaveToText = new System.Windows.Forms.Button();
             this.TextScanned2 = new System.Windows.Forms.Label();
+            this.SaveToCSV = new System.Windows.Forms.Button();
             ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             this.SuspendLayout();
             // 
@@ -72,7 +73,7 @@
             this.SaveToText.Name = "SaveToText";
             this.SaveToText.Size = new System.Drawing.Size(156, 42);
             this.SaveToText.TabIndex = 3;
-            this.SaveToText.Text = "Save To Text Document";
+            this.SaveToText.Text = "Save To Json Document";
             this.SaveToText.UseVisualStyleBackColor = true;
             this.SaveToText.Visible = false;
             this.SaveToText.Click += new System.EventHandler(this.SaveToText_Click);
@@ -80,18 +81,30 @@
             // TextScanned2
             // 
             this.TextScanned2.AutoSize = true;
-            this.TextScanned2.Location = new System.Drawing.Point(273, 63);
+            this.TextScanned2.Location = new System.Drawing.Point(294, 63);
             this.TextScanned2.Name = "TextScanned2";
             this.TextScanned2.Size = new System.Drawing.Size(35, 13);
             this.TextScanned2.TabIndex = 4;
             this.TextScanned2.Text = "label1";
             this.TextScanned2.Visible = false;
             // 
+            // SaveToCSV
+            // 
+            this.SaveToCSV.Location = new System.Drawing.Point(406, 378);
+            this.SaveToCSV.Name = "SaveToCSV";
+            this.SaveToCSV.Size = new System.Drawing.Size(156, 42);
+            this.SaveToCSV.TabIndex = 5;
+            this.SaveToCSV.Text = "Save To CSV Document";
+            this.SaveToCSV.UseVisualStyleBackColor = true;
+            this.SaveToCSV.Visible = false;
+            this.SaveToCSV.Click += new System.EventHandler(this.SaveToCSV_Click);
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(800, 450);
+            this.Controls.Add(this.SaveToCSV);
             this.Controls.Add(this.TextScanned2);
             this.Controls.Add(this.SaveToText);
             this.Controls.Add(this.TextScanned);
@@ -114,6 +127,7 @@
         private System.Windows.Forms.Label TextScanned;
         private System.Windows.Forms.Button SaveToText;
         private System.Windows.Forms.Label TextScanned2;
+        private System.Windows.Forms.Button SaveToCSV;
     }
 }
 

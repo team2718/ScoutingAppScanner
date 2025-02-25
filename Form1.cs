@@ -4,8 +4,10 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
+using System.Xml.Linq;
 using AForge.Video;
 using AForge.Video.DirectShow;
+using Newtonsoft.Json.Linq;
 using ZXing;
 
 namespace CameraFeedApp
@@ -80,11 +82,6 @@ namespace CameraFeedApp
                         Invoke(new Action(() =>
                         {
                             Scanned = true;
-                            //Console.WriteLine($"{qrCodeData}");
-                            
-                            string[] dataHalved = SplitWithNewlines(qrCodeData);
-                            Console.WriteLine(dataHalved.Length);
-                            Console.WriteLine(dataHalved[26]);
 
                             if (pictureBox1 != null)
                             {
@@ -92,12 +89,15 @@ namespace CameraFeedApp
                                 pictureBox1.Dispose(); // Dispose to free resources
                                 pictureBox1 = null; // Set to null to avoid accessing it after removal
                             }
-                            TextScanned.Text = CombineStrings(dataHalved, 0, 25);
-                            TextScanned2.Text = CombineStrings(dataHalved, 26, 32);
-                            TextScanned.Visible = true;
+                            String cutUpData = qrCodeData.Replace(',', '\n');
+                            String[] cutUpDataArray = SplitWithNewlines(cutUpData);
+                            TextScanned.Text = CombineStrings(cutUpDataArray, 0, 21);
+                            TextScanned2.Text = CombineStrings(cutUpDataArray, 20, cutUpDataArray.Length - 1);
                             TextScanned2.Visible = true;
+                            TextScanned.Visible = true;
                             TextScannedText.Visible = true;
                             SaveToText.Visible = true;
+                            SaveToCSV.Visible = true;
                         }));
                     }
                 }
@@ -173,20 +173,24 @@ namespace CameraFeedApp
 
         private void SaveToText_Click(object sender, EventArgs e)
         {
-            string[] partsTeamNum = qrCodeData.Split('\n');
-            string[] parts2TeamNum = partsTeamNum[0].Split(':');
-            string teamNumber = parts2TeamNum[1].Replace(" ", "");
+            String Documents = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
 
-            string[] partsMatchNum = qrCodeData.Split('\n');
-            string[] parts2MatchNum = partsMatchNum[1].Split(':');
-            string matchNumber = parts2MatchNum[1].Replace(" ", "");
+            JObject jsonObj = JObject.Parse(qrCodeData);
+            JToken teamNumberJToken = jsonObj.SelectToken("$.teamNumber");
+            String teamNumberString = teamNumberJToken.ToString();
+            Console.WriteLine(teamNumberString);
 
-            teamNumber = SafeFileName(teamNumber);
-            matchNumber = SafeFileName(matchNumber);
+            JToken matchNumberJToken = jsonObj.SelectToken("$.matchNumber");
+            String matchNumberString = matchNumberJToken.ToString();
+            Console.WriteLine(matchNumberString);
 
-            string fileName = $"Team({teamNumber})Match({matchNumber})Text.txt";
-            Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ScoutingData"));
-            string textFileSaved = Path.Combine(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ScoutingData"), fileName);
+            string fileName = $"Team({teamNumberString})Match({matchNumberString})Text.json";
+            Directory.CreateDirectory(Path.Combine(Documents, "ScoutingData"));
+            string ScoutingDataDir = Path.Combine(Documents, "ScoutingData");
+            Directory.CreateDirectory(Path.Combine(ScoutingDataDir, "Json-Files"));
+            string JsonDir = Path.Combine(ScoutingDataDir, "Json-Files");
+            string textFileSaved = Path.Combine(Path.Combine(JsonDir, fileName));
+            File.WriteAllText(textFileSaved, qrCodeData);
 
             Console.WriteLine(textFileSaved);
 
@@ -196,12 +200,13 @@ namespace CameraFeedApp
             {
                 Icon = SystemIcons.Information, // Set the icon
                 Visible = true,
-                BalloonTipTitle = "Saved to Text Document",
+                BalloonTipTitle = "Saved to Json Document",
                 BalloonTipText = "Data was saved to " + textFileSaved,
             };
 
             // Show the notification
             notifyIcon.ShowBalloonTip(3000); // Show for 3 seconds
+            
         }
 
         string SafeFileName(string input)
@@ -245,6 +250,40 @@ namespace CameraFeedApp
             }
 
             return result;
+        }
+
+        private void SaveToCSV_Click(object sender, EventArgs e)
+        {
+            String Documents = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+
+            JObject jsonObj = JObject.Parse(qrCodeData);
+            JToken teamNumberJToken = jsonObj.SelectToken("$.teamNumber");
+            String teamNumberString = teamNumberJToken.ToString();
+
+            JToken matchNumberJToken = jsonObj.SelectToken("$.matchNumber");
+            String matchNumberString = matchNumberJToken.ToString();
+
+            String CSVed = qrCodeData.Replace(",", "\n").Replace("{", "").Replace("}", "").Replace("\"", "").Replace(":", ", ");
+            CSVed = "Type, Value\n" + CSVed;
+
+            string fileName = $"Team({teamNumberString})Match({matchNumberString})Text.csv";
+            Directory.CreateDirectory(Path.Combine(Documents, "ScoutingData"));
+            string ScoutingDataDir = Path.Combine(Documents, "ScoutingData");
+            Directory.CreateDirectory(Path.Combine(ScoutingDataDir, "CSV-Files"));
+            string CSVDir = Path.Combine(ScoutingDataDir, "CSV-Files");
+            string textFileSaved = Path.Combine(Path.Combine(CSVDir, fileName));
+            File.WriteAllText(textFileSaved, CSVed);
+
+            NotifyIcon notifyIcon = new NotifyIcon
+            {
+                Icon = SystemIcons.Information, // Set the icon
+                Visible = true,
+                BalloonTipTitle = "Saved to CSV Document",
+                BalloonTipText = "Data was saved to " + textFileSaved,
+            };
+
+            // Show the notification
+            notifyIcon.ShowBalloonTip(3000); // Show for 3 seconds
         }
     }
 }
