@@ -1,14 +1,14 @@
-﻿using System;
+﻿using AForge.Video;
+using AForge.Video.DirectShow;
+using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
-using System.Xml.Linq;
-using AForge.Video;
-using AForge.Video.DirectShow;
-using Newtonsoft.Json.Linq;
 using ZXing;
 
 namespace CameraFeedApp
@@ -20,7 +20,14 @@ namespace CameraFeedApp
         private CancellationTokenSource cancellationTokenSource;
 
         public bool Scanned = false;
-        string qrCodeData;
+        string currentQRCodeString;
+        JObject currentQRCodeJson = null;
+        string deviceMoniker = "";
+
+        Dictionary<string, JObject> all_the_reports = new Dictionary<string, JObject>();
+
+        String scoutingDataDir;
+        String reportsFileDir;
 
         public MainForm()
         {
@@ -30,6 +37,24 @@ namespace CameraFeedApp
         private void MainForm_Load(object sender, EventArgs e)
         {
             this.Text = "Scouting App Scanner";
+
+            scoutingDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ScoutingData");
+            reportsFileDir = Path.Combine(scoutingDataDir, "scouting_reports_db.json");
+
+            // Read all_the_reports from a file
+            if (File.Exists(reportsFileDir))
+            {
+                string json_text = File.ReadAllText(reportsFileDir);
+                all_the_reports = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, JObject>>(json_text);
+            }
+            else
+            {
+                Directory.CreateDirectory(scoutingDataDir);
+                File.Create(reportsFileDir);
+            }
+
+            numReportMenuItem.Text = "Num Reports: " + all_the_reports.Count.ToString();
+
             // Get the list of available video devices
             videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
 
@@ -45,72 +70,71 @@ namespace CameraFeedApp
                 Console.WriteLine(device.Name); // Output device names for debugging
             }
 
-            Console.WriteLine($"video devices");
             if (videoDevices.Count > 0)
             {
-                Console.WriteLine($"{videoDevices[0]} video devices");
-                // Initialize the video source with the first camera
-                videoSource = new VideoCaptureDevice(videoDevices[1].MonikerString);
-                videoSource.NewFrame += VideoSource_NewFrame; // Attach frame event handler
-                videoSource.Start(); // Start capturing
+                // Add all devices to combobox
+                foreach (FilterInfo device in videoDevices)
+                {
+                    comboBox1.Items.Add(device.Name);
+                }
+
+                comboBox1.SelectedIndex = 0;
             }
         }
 
         private void VideoSource_NewFrame(object sender, NewFrameEventArgs eventArgs)
         {
-            if (!Scanned)
+            Bitmap frame = null;
+            try
             {
-                Bitmap frame = null;
+                // Clone the frame to avoid accessing the original object directly
+                frame = (Bitmap)eventArgs.Frame.Clone();
 
-                try
+                pictureBox1.Image = new Bitmap(frame, pictureBox1.Width, pictureBox1.Height);
+
+                // Decode QR code in the frame
+                var qrCodeData = DecodeQRCodeFromBitmap(frame);
+
+                // If QR code data is found, handle it
+                if (!string.IsNullOrEmpty(qrCodeData))
                 {
-                    // Clone the frame to avoid accessing the original object directly
-                    frame = (Bitmap)eventArgs.Frame.Clone();
-
-                    // Display the cloned frame in the PictureBox (UI thread)
-                    pictureBox1.Invoke(new Action(() =>
+                    Invoke(new Action(() =>
                     {
-                        pictureBox1.Image?.Dispose(); // Dispose of the previous image
-                        pictureBox1.Image = (Bitmap)frame.Clone(); // Clone again for display
-                    }));
-
-                    // Decode QR code in the frame
-                    qrCodeData = DecodeQRCodeFromBitmap(frame);
-
-                    // If QR code data is found, handle it
-                    if (!string.IsNullOrEmpty(qrCodeData))
-                    {
-                        Invoke(new Action(() =>
+                        try
                         {
-                            Scanned = true;
+                            currentQRCodeString = qrCodeData;
+                            currentQRCodeJson = JObject.Parse(qrCodeData);
+                            TextScannedText.Text = "Match " + currentQRCodeJson.SelectToken("$.matchNumber") + " Team " + currentQRCodeJson.SelectToken("$.teamNumber");
 
-                            if (pictureBox1 != null)
+                            if (!all_the_reports.ContainsKey(currentQRCodeJson.SelectToken("$.uid").ToString()))
                             {
-                                this.Controls.Remove(pictureBox1); // Remove from the form's controls
-                                pictureBox1.Dispose(); // Dispose to free resources
-                                pictureBox1 = null; // Set to null to avoid accessing it after removal
+                                all_the_reports[currentQRCodeJson.SelectToken("$.uid").ToString()] = currentQRCodeJson;
+                                numReportMenuItem.Text = "Num Reports: " + all_the_reports.Count.ToString();
+                                writeReportsToFile();
                             }
+
                             String cutUpData = qrCodeData.Replace(',', '\n');
-                            String[] cutUpDataArray = SplitWithNewlines(cutUpData);
-                            TextScanned.Text = CombineStrings(cutUpDataArray, 0, 21);
-                            TextScanned2.Text = CombineStrings(cutUpDataArray, 20, cutUpDataArray.Length - 1);
-                            TextScanned2.Visible = true;
+                            TextScanned.Text = cutUpData;
                             TextScanned.Visible = true;
                             TextScannedText.Visible = true;
-                            SaveToText.Visible = true;
-                            SaveToCSV.Visible = true;
-                        }));
-                    }
+                            Scanned = true;
+                        }
+                        catch (Exception ex)
+                        {
+                            //Console.WriteLine($"Error processing QR code: {ex.Message}");
+                        }
+                    }));
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error processing video frame: {ex.Message}");
-                }
-                finally
-                {
-                    // Dispose of the cloned frame to free resources
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing video frame: {ex.Message}");
+            }
+            finally
+            {
+                // Dispose of the cloned frame to free resources
+                if (frame != null)
                     frame?.Dispose();
-                }
             }
         }
 
@@ -125,8 +149,17 @@ namespace CameraFeedApp
             }
         }
 
-        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        private void writeReportsToFile()
         {
+            // Write all_the_reports to a file
+            string json_text = Newtonsoft.Json.JsonConvert.SerializeObject(all_the_reports);
+            File.WriteAllText(reportsFileDir, json_text);
+        }
+
+        private void closeSafely()
+        {
+            writeReportsToFile();
+
             // Ensure the camera feed stops when the form closes
             if (videoSource != null && videoSource.IsRunning)
             {
@@ -145,6 +178,11 @@ namespace CameraFeedApp
             cancellationTokenSource?.Cancel();
 
             Application.Exit();
+        }
+
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            closeSafely();
         }
 
         public string DecodeQRCodeFromBitmap(Bitmap bitmap)
@@ -170,54 +208,6 @@ namespace CameraFeedApp
                 Console.WriteLine($"Error decoding QR code: {ex.Message}");
                 return null;
             }
-        }
-
-        private void SaveToText_Click(object sender, EventArgs e)
-        {
-            String Documents = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
-
-            JObject jsonObj = JObject.Parse(qrCodeData);
-            JToken teamNumberJToken = jsonObj.SelectToken("$.teamNumber");
-            String teamNumberString = teamNumberJToken.ToString();
-            Console.WriteLine(teamNumberString);
-
-            JToken matchNumberJToken = jsonObj.SelectToken("$.matchNumber");
-            String matchNumberString = matchNumberJToken.ToString();
-            Console.WriteLine(matchNumberString);
-
-            string fileName = $"Team({teamNumberString})Match({matchNumberString})Text.json";
-            Directory.CreateDirectory(Path.Combine(Documents, "ScoutingData"));
-            string ScoutingDataDir = Path.Combine(Documents, "ScoutingData");
-            Directory.CreateDirectory(Path.Combine(ScoutingDataDir, "Json-Files"));
-            string JsonDir = Path.Combine(ScoutingDataDir, "Json-Files");
-            string textFileSaved = Path.Combine(Path.Combine(JsonDir, fileName));
-            File.WriteAllText(textFileSaved, qrCodeData);
-
-            Console.WriteLine(textFileSaved);
-
-            File.WriteAllText(textFileSaved, qrCodeData);
-
-            NotifyIcon notifyIcon = new NotifyIcon
-            {
-                Icon = SystemIcons.Information, // Set the icon
-                Visible = true,
-                BalloonTipTitle = "Saved to Json Document",
-                BalloonTipText = "Data was saved to " + textFileSaved,
-            };
-
-            // Show the notification
-            notifyIcon.ShowBalloonTip(3000); // Show for 3 seconds
-            
-        }
-
-        string SafeFileName(string input)
-        {
-            char[] invalidChars = Path.GetInvalidFileNameChars();
-            foreach (char c in invalidChars)
-            {
-                input = input.Replace(c.ToString(), ""); // Replace invalid characters with '_'
-            }
-            return input;
         }
 
         public static string CombineStrings(string[] inputArray, int startIndex, int endIndex)
@@ -253,13 +243,37 @@ namespace CameraFeedApp
             return result;
         }
 
-        private void SaveToCSV_Click(object sender, EventArgs e)
+        private void comboBox1_SelectedIndexChanged(object sender, EventArgs e)
         {
-            JObject jsonObj = JObject.Parse(qrCodeData);
-            JToken teamNumberJToken = jsonObj.SelectToken("$.teamNumber");
+            // Set the video source to the selected camera
+            if (videoSource != null && videoSource.IsRunning)
+            {
+                videoSource.SignalToStop();
+                videoSource.WaitForStop();
+                videoSource = null;
+            }
+
+            deviceMoniker = videoDevices[comboBox1.SelectedIndex].MonikerString;
+
+            videoSource = new VideoCaptureDevice(deviceMoniker);
+            videoSource.NewFrame += VideoSource_NewFrame;
+            double aspect_ratio = videoSource.VideoCapabilities[0].FrameSize.Height / (double)videoSource.VideoCapabilities[0].FrameSize.Width;
+            pictureBox1.Height = (int)(pictureBox1.Width * aspect_ratio);
+            videoSource.Start();
+        }
+
+        private void saveAsCSVToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (!Scanned)
+            {
+                MessageBox.Show("No QR code scanned yet.");
+                return;
+            }
+
+            JToken teamNumberJToken = currentQRCodeJson.SelectToken("$.teamNumber");
             String teamNumberString = teamNumberJToken.ToString();
 
-            JToken matchNumberJToken = jsonObj.SelectToken("$.matchNumber");
+            JToken matchNumberJToken = currentQRCodeJson.SelectToken("$.matchNumber");
             String matchNumberString = matchNumberJToken.ToString();
 
             string fileName = $"Team({teamNumberString}).csv";
@@ -270,13 +284,13 @@ namespace CameraFeedApp
             string CSVDir = Path.Combine(ScoutingDataDir, "CSV-Files");
             string CSVFileSaved = Path.Combine(Path.Combine(CSVDir, fileName));
 
-            String CSVed = qrCodeData.Replace(",", "\n").Replace("{", "").Replace("}", "").Replace("\"", "").Replace(":", ", ");
+            String CSVed = currentQRCodeString.Replace(",", "\n").Replace("{", "").Replace("}", "").Replace("\"", "").Replace(":", ", ");
             CSVed = "Type, Value\n" + CSVed;
-            
+
 
             if (File.Exists(CSVFileSaved))
             {
-                string[] connectingValue = qrCodeData.Replace("{", "").Replace("}", "").Replace("\"", "").Split(',');
+                string[] connectingValue = currentQRCodeString.Replace("{", "").Replace("}", "").Replace("\"", "").Split(',');
                 List<string> connectingValueSheet = new List<string>();
                 connectingValueSheet.Add("Value");
                 foreach (string line in connectingValue)
@@ -291,15 +305,15 @@ namespace CameraFeedApp
                 }
                 Console.WriteLine(connectingValueSheet.Count);
                 Console.WriteLine(lines.Length);
-                
+
                 foreach (string line in newSheet)
                 {
                     Console.WriteLine(line);
                 }
                 File.WriteAllLines(CSVFileSaved, newSheet);
-                
+
             }
-            else 
+            else
             {
                 File.WriteAllText(CSVFileSaved, CSVed);
             }
@@ -314,6 +328,216 @@ namespace CameraFeedApp
 
             // Show the notification
             notifyIcon.ShowBalloonTip(3000); // Show for 3 seconds
+        }
+
+        private void saveAsJSONToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            if (!Scanned)
+            {
+                MessageBox.Show("No QR code scanned yet.");
+                return;
+            }
+
+            String Documents = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+
+            JToken teamNumberJToken = currentQRCodeJson.SelectToken("$.teamNumber");
+            String teamNumberString = teamNumberJToken.ToString();
+            Console.WriteLine(teamNumberString);
+
+            JToken matchNumberJToken = currentQRCodeJson.SelectToken("$.matchNumber");
+            String matchNumberString = matchNumberJToken.ToString();
+            Console.WriteLine(matchNumberString);
+
+            string fileName = $"Team({teamNumberString})Match({matchNumberString})Text.json";
+            Directory.CreateDirectory(Path.Combine(Documents, "ScoutingData"));
+            string ScoutingDataDir = Path.Combine(Documents, "ScoutingData");
+            Directory.CreateDirectory(Path.Combine(ScoutingDataDir, "Json-Files"));
+            string JsonDir = Path.Combine(ScoutingDataDir, "Json-Files");
+            string textFileSaved = Path.Combine(Path.Combine(JsonDir, fileName));
+            File.WriteAllText(textFileSaved, currentQRCodeString);
+
+            Console.WriteLine(textFileSaved);
+
+            File.WriteAllText(textFileSaved, currentQRCodeString);
+
+            NotifyIcon notifyIcon = new NotifyIcon
+            {
+                Icon = SystemIcons.Information, // Set the icon
+                Visible = true,
+                BalloonTipTitle = "Saved to Json Document",
+                BalloonTipText = "Data was saved to " + textFileSaved,
+            };
+
+            // Show the notification
+            notifyIcon.ShowBalloonTip(3000); // Show for 3 seconds
+
+        }
+
+        private void exitToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            closeSafely();
+        }
+
+        private void clearAllReportsToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            writeReportsToFile();
+
+            // Backup reports file with timestamp
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+            string backupFileName = $"scouting_reports_db_{timestamp}.json";
+            string backupFilePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ScoutingData", backupFileName);
+            File.Copy(reportsFileDir, backupFilePath);
+
+            all_the_reports.Clear();
+            numReportMenuItem.Text = "Num Reports: " + all_the_reports.Count.ToString();
+            writeReportsToFile();
+        }
+
+        private string ConvertJsonToCsv(Dictionary<string, JObject> reports)
+        {
+            // Gather all the keys of the first report and use as the header
+            JObject firstReport = reports.Values.First();
+            List<string> header = new List<string>();
+            foreach (var key in firstReport)
+            {
+                if (key.Key == "stagesComplete" || key.Key == "uid")
+                {
+                    continue;
+                }
+                header.Add(key.Key);
+            }
+
+            // Write the header row
+            string csvText = string.Join(",", header) + "\n";
+
+            // Write each report as a row
+            foreach (var report in reports)
+            {
+                List<string> row = new List<string>();
+                foreach (var key in header)
+                {
+                    var value = report.Value.SelectToken(key);
+
+                    // This is about to get real ugly partner
+
+                    if (key == "alliance")
+                    {
+                        //< item > Red </ item >
+                        //< item > Blue </ item >
+                        string new_value = value.ToString();
+                        switch ((int)value)
+                        {
+                            case 0: new_value = "Red"; break;
+                            case 1: new_value = "Blue"; break;
+                        }
+                        row.Add(new_value);
+                    }
+                    else if (key == "startingPosition")
+                    {
+                        //< item > Processor Side </ item >
+                        //< item > Middle </ item >
+                        //< item > Other Side </ item >
+                        string new_value = value.ToString();
+                        switch ((int)value)
+                        {
+                            case 0: new_value = "Processor Side"; break;
+                            case 1: new_value = "Middle"; break;
+                            case 2: new_value = "Other Side"; break;
+                        }
+                        row.Add(new_value);
+                    }
+                    else if (key == "hangType")
+                    {
+                        //< item > None </ item >
+                        //< item > Park </ item >
+                        //< item > Shallow </ item >
+                        //< item > Deep </ item >
+                        //< item > Shallow Failed </ item >
+                        //< item > Deep Failed </ item >
+                        string new_value = value.ToString();
+                        switch ((int)value)
+                        {
+                            case 0: new_value = "None"; break;
+                            case 1: new_value = "Park"; break;
+                            case 2: new_value = "Shallow"; break;
+                            case 3: new_value = "Deep"; break;
+                            case 4: new_value = "Shallow Failed"; break;
+                            case 5: new_value = "Deep Failed"; break;
+                        }
+                        row.Add(new_value);
+                    }
+                    else if (key == "cardReceived")
+                    {
+                        //< item > None </ item >
+                        //< item > Yellow </ item >
+                        //< item > Red </ item >
+                        string new_value = value.ToString();
+                        switch ((int)value)
+                        {
+                            case 0: new_value = "None"; break;
+                            case 1: new_value = "Yellow"; break;
+                            case 2: new_value = "Red"; break;
+                        }
+                        row.Add(new_value);
+                    }
+                    else if (key != "stagesComplete" && key != "uid")
+                    {
+                        row.Add(value.ToString());
+                    }
+                }
+                csvText += string.Join(",", row) + "\n";
+            }
+
+            return csvText;
+        }
+
+        private void convertToCSVToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // Ask for a file to convert
+            // Start at the folder where the reports are stored
+            OpenFileDialog openFileDialog = new OpenFileDialog
+            {
+                InitialDirectory = Path.GetDirectoryName(reportsFileDir),
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                FilterIndex = 1,
+                RestoreDirectory = true
+            };
+
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                string jsonFilePath = openFileDialog.FileName;
+                string json = File.ReadAllText(jsonFilePath);
+                try
+                {
+                    Dictionary<string, JObject> loaded_reports = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, JObject>>(json);
+
+                    if (loaded_reports.Count == 0)
+                    {
+                        MessageBox.Show("No reports found in the JSON file.");
+                        return;
+                    }
+
+                    // Convert the JSON to CSV
+                    string csvText = ConvertJsonToCsv(loaded_reports);
+
+                    // Save the CSV to a file
+                    string csvFilePath = Path.ChangeExtension(jsonFilePath, ".csv");
+                    File.WriteAllText(csvFilePath, csvText);
+
+                    // Notify the user
+                    MessageBox.Show($"Converted JSON to CSV and saved to {csvFilePath}");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error converting JSON to CSV: {ex.Message}");
+                }
+            }
+        }
+
+        private void openReportsFolderToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            // Open reports folder
+            System.Diagnostics.Process.Start(scoutingDataDir);
         }
     }
 }
