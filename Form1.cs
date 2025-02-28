@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -254,8 +255,6 @@ namespace CameraFeedApp
 
         private void SaveToCSV_Click(object sender, EventArgs e)
         {
-            String Documents = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
-
             JObject jsonObj = JObject.Parse(qrCodeData);
             JToken teamNumberJToken = jsonObj.SelectToken("$.teamNumber");
             String teamNumberString = teamNumberJToken.ToString();
@@ -263,23 +262,54 @@ namespace CameraFeedApp
             JToken matchNumberJToken = jsonObj.SelectToken("$.matchNumber");
             String matchNumberString = matchNumberJToken.ToString();
 
-            String CSVed = qrCodeData.Replace(",", "\n").Replace("{", "").Replace("}", "").Replace("\"", "").Replace(":", ", ");
-            CSVed = "Type, Value\n" + CSVed;
-
-            string fileName = $"Team({teamNumberString})Match({matchNumberString})Text.csv";
+            string fileName = $"Team({teamNumberString}).csv";
+            String Documents = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
             Directory.CreateDirectory(Path.Combine(Documents, "ScoutingData"));
             string ScoutingDataDir = Path.Combine(Documents, "ScoutingData");
             Directory.CreateDirectory(Path.Combine(ScoutingDataDir, "CSV-Files"));
             string CSVDir = Path.Combine(ScoutingDataDir, "CSV-Files");
-            string textFileSaved = Path.Combine(Path.Combine(CSVDir, fileName));
-            File.WriteAllText(textFileSaved, CSVed);
+            string CSVFileSaved = Path.Combine(Path.Combine(CSVDir, fileName));
+
+            String CSVed = qrCodeData.Replace(",", "\n").Replace("{", "").Replace("}", "").Replace("\"", "").Replace(":", ", ");
+            CSVed = "Type, Value\n" + CSVed;
+            
+
+            if (File.Exists(CSVFileSaved))
+            {
+                string[] connectingValue = qrCodeData.Replace("{", "").Replace("}", "").Replace("\"", "").Split(',');
+                List<string> connectingValueSheet = new List<string>();
+                connectingValueSheet.Add("Value");
+                foreach (string line in connectingValue)
+                {
+                    connectingValueSheet.Add(line.Split(':')[1]);
+                }
+                string[] lines = File.ReadAllLines(CSVFileSaved);
+                List<string> newSheet = new List<string>();
+                for (int i = 0; i < connectingValueSheet.Count; i++)
+                {
+                    newSheet.Add(lines[i] + ", " + connectingValueSheet[i]);
+                }
+                Console.WriteLine(connectingValueSheet.Count);
+                Console.WriteLine(lines.Length);
+                
+                foreach (string line in newSheet)
+                {
+                    Console.WriteLine(line);
+                }
+                File.WriteAllLines(CSVFileSaved, newSheet);
+                
+            }
+            else 
+            {
+                File.WriteAllText(CSVFileSaved, CSVed);
+            }
 
             NotifyIcon notifyIcon = new NotifyIcon
             {
                 Icon = SystemIcons.Information, // Set the icon
                 Visible = true,
                 BalloonTipTitle = "Saved to CSV Document",
-                BalloonTipText = "Data was saved to " + textFileSaved,
+                BalloonTipText = "Data was saved to " + CSVFileSaved,
             };
 
             // Show the notification
